@@ -14,7 +14,6 @@ import { FileText, Search, Download, Eye, DollarSign, Clock } from "lucide-react
 import { useToast } from "@/components/ui/use-toast"
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
 import Link from "next/link"
-import Image from "next/image"
 import { ApprovalStatus, type ApprovalStep } from "@/components/approval-status"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatCurrency, getSecondaryCurrencyDisplay } from "@/lib/currency"
@@ -80,10 +79,12 @@ export default function DashboardPage() {
       const storedInvoices = localStorage.getItem("invoices") || "[]"
       const allInvoices = JSON.parse(storedInvoices) as Invoice[]
 
-      setInvoices(allInvoices)
+      // 현재 사용자가 제출한 인보이스만 필터링
+      const userInvoices = allInvoices.filter((invoice) => invoice.createdBy === user?.email)
+      setInvoices(userInvoices)
 
       // 검색어에 따라 필터링
-      filterInvoices(allInvoices, searchTerm)
+      filterInvoices(userInvoices, searchTerm)
     }
 
     loadInvoices()
@@ -97,29 +98,22 @@ export default function DashboardPage() {
     return () => {
       window.removeEventListener("storage", handleStorageChange)
     }
-  }, [])
+  }, [user?.email])
 
   // 검색어에 따라 인보이스 필터링
   const filterInvoices = (invoiceList: Invoice[], term: string) => {
     if (!term.trim()) {
-      // 검색어가 없으면 모든 인보이스 표시 (오너) 또는 자신의 인보이스만 표시 (멤버)
-      if (isOwner()) {
-        setFilteredInvoices(invoiceList)
-      } else {
-        setFilteredInvoices(invoiceList.filter((invoice) => invoice.createdBy === user?.email))
-      }
+      // 검색어가 없으면 사용자의 모든 인보이스 표시
+      setFilteredInvoices(invoiceList)
     } else {
       // 검색어에 따라 필터링
       const filtered = invoiceList.filter((invoice) => {
-        const matchesSearch =
+        return (
           invoice.invoiceNumber.toLowerCase().includes(term.toLowerCase()) ||
           invoice.projectName.toLowerCase().includes(term.toLowerCase()) ||
           (invoice.customerName && invoice.customerName.toLowerCase().includes(term.toLowerCase())) ||
-          (invoice.supplierName && invoice.supplierName.toLowerCase().includes(term.toLowerCase())) ||
-          (invoice.referrerName && invoice.referrerName.toLowerCase().includes(term.toLowerCase()))
-
-        // 오너는 모든 인보이스, 멤버는 자신의 인보이스만 표시
-        return matchesSearch && (isOwner() || invoice.createdBy === user?.email)
+          (invoice.supplierName && invoice.supplierName.toLowerCase().includes(term.toLowerCase()))
+        )
       })
 
       setFilteredInvoices(filtered)
@@ -129,7 +123,7 @@ export default function DashboardPage() {
   // 검색어 변경 시 필터링
   useEffect(() => {
     filterInvoices(invoices, searchTerm)
-  }, [searchTerm, user, isOwner, invoices])
+  }, [searchTerm, invoices])
 
   // 인보이스 삭제 함수
   const handleDeleteInvoice = (invoiceNumber: string) => {
@@ -156,9 +150,10 @@ export default function DashboardPage() {
       const updatedInvoices = allInvoices.filter((invoice) => invoice.invoiceNumber !== invoiceNumber)
       localStorage.setItem("invoices", JSON.stringify(updatedInvoices))
 
-      // 상태 업데이트
-      setInvoices(updatedInvoices)
-      filterInvoices(updatedInvoices, searchTerm)
+      // 상태 업데이트 - 사용자의 인보이스만 필터링
+      const userInvoices = updatedInvoices.filter((invoice) => invoice.createdBy === user?.email)
+      setInvoices(userInvoices)
+      filterInvoices(userInvoices, searchTerm)
 
       toast({
         title: "인보이스 삭제 완료",
@@ -233,14 +228,7 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <Image
-            src="/images/CW_Logo_Color.png"
-            alt="Cushman & Wakefield"
-            width={200}
-            height={50}
-            priority
-            className="h-10 w-auto"
-          />
+          <h1 className="text-2xl font-bold">Dashboard</h1>
           <div className="flex items-center gap-4">
             <div className="relative w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -270,9 +258,8 @@ export default function DashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">{filteredInvoices.length}</div>
               <p className="text-xs text-muted-foreground">
-                Customer: {filteredInvoices.filter((inv) => inv.type === "customer").length}, 3rd party:{" "}
-                {filteredInvoices.filter((inv) => inv.type === "supplier").length}, Plus One:{" "}
-                {filteredInvoices.filter((inv) => inv.type === "plusone").length}
+                Customer: {filteredInvoices.filter((inv) => inv.type === "customer").length}, Supplier:{" "}
+                {filteredInvoices.filter((inv) => inv.type === "supplier").length}
               </p>
             </CardContent>
           </Card>
@@ -331,17 +318,14 @@ export default function DashboardPage() {
         >
           <TabsList>
             <TabsTrigger value="customer">Customer Invoice</TabsTrigger>
-            <TabsTrigger value="supplier">3rd party Invoice</TabsTrigger>
-            <TabsTrigger value="plusone">Plus One</TabsTrigger>
+            <TabsTrigger value="supplier">Supplier Invoice</TabsTrigger>
           </TabsList>
 
           <TabsContent value="customer">
             <Card>
               <CardHeader>
                 <CardTitle>Customer Invoice 목록</CardTitle>
-                <CardDescription>
-                  {isOwner() ? "모든 Customer Invoice 목록입니다." : "내가 신청한 Customer Invoice 목록입니다."}
-                </CardDescription>
+                <CardDescription>내가 신청한 Customer Invoice 목록입니다.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -415,10 +399,8 @@ export default function DashboardPage() {
           <TabsContent value="supplier">
             <Card>
               <CardHeader>
-                <CardTitle>3rd party Invoice 목록</CardTitle>
-                <CardDescription>
-                  {isOwner() ? "모든 3rd party Invoice 목록입니다." : "내가 신청한 3rd party Invoice 목록입니다."}
-                </CardDescription>
+                <CardTitle>Supplier Invoice 목록</CardTitle>
+                <CardDescription>내가 신청한 Supplier Invoice 목록입니다.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -479,87 +461,7 @@ export default function DashboardPage() {
                     ) : (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-6">
-                          <p className="text-muted-foreground">3rd party Invoice가 없습니다.</p>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="plusone">
-            <Card>
-              <CardHeader>
-                <CardTitle>Plus One 목록</CardTitle>
-                <CardDescription>
-                  {isOwner() ? "모든 Plus One 목록입니다." : "내가 신청한 Plus One 목록입니다."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>인보이스 번호</TableHead>
-                      <TableHead>소개자</TableHead>
-                      <TableHead>소개자 부서</TableHead>
-                      <TableHead>프로젝트</TableHead>
-                      <TableHead>Plus One 금액</TableHead>
-                      <TableHead>상태</TableHead>
-                      <TableHead>작업</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInvoices.filter((inv) => inv.type === "plusone").length > 0 ? (
-                      filteredInvoices
-                        .filter((inv) => inv.type === "plusone")
-                        .map((invoice) => (
-                          <TableRow key={invoice.invoiceNumber}>
-                            <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                            <TableCell>{invoice.referrerName}</TableCell>
-                            <TableCell>{invoice.referrerDepartment}</TableCell>
-                            <TableCell>{invoice.projectName}</TableCell>
-                            <TableCell>
-                              <div>
-                                {formatCurrency(invoice.referralAmount || 0, invoice.currency || "KRW")}
-                                {(invoice.currency === "KRW" || invoice.currency === "USD") && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {getSecondaryCurrencyDisplay(
-                                      invoice.referralAmount || 0,
-                                      invoice.currency || "KRW",
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={getStatusBadgeVariant(invoice.status)}>
-                                {getStatusText(invoice.status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex space-x-2">
-                                <Button variant="outline" size="icon" onClick={() => showInvoiceDetails(invoice)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button variant="outline" size="icon">
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                <DeleteConfirmationDialog
-                                  title="인보이스 삭제"
-                                  description={`정말로 인보이스 ${invoice.invoiceNumber}를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
-                                  onDelete={() => handleDeleteInvoice(invoice.invoiceNumber)}
-                                  disabled={!canDeleteInvoice(invoice.createdBy, invoice.status)}
-                                />
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center py-6">
-                          <p className="text-muted-foreground">Plus One이 없습니다.</p>
+                          <p className="text-muted-foreground">Supplier Invoice가 없습니다.</p>
                         </TableCell>
                       </TableRow>
                     )}
@@ -585,11 +487,7 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground">인보이스 유형</h3>
                     <p className="text-base">
-                      {selectedInvoice.type === "customer"
-                        ? "Customer Invoice"
-                        : selectedInvoice.type === "supplier"
-                          ? "3rd party Invoice"
-                          : "Plus One"}
+                      {selectedInvoice.type === "customer" ? "Customer Invoice" : "Supplier Invoice"}
                     </p>
                   </div>
                   <div>
@@ -598,18 +496,12 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground">
-                      {selectedInvoice.type === "customer"
-                        ? "고객사"
-                        : selectedInvoice.type === "supplier"
-                          ? "공급업체"
-                          : "소개자"}
+                      {selectedInvoice.type === "customer" ? "고객사" : "공급업체"}
                     </h3>
                     <p className="text-base">
                       {selectedInvoice.type === "customer"
                         ? selectedInvoice.customerName
-                        : selectedInvoice.type === "supplier"
-                          ? selectedInvoice.supplierName
-                          : selectedInvoice.referrerName}
+                        : selectedInvoice.supplierName}
                     </p>
                   </div>
                   <div>
@@ -636,10 +528,14 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Plus One 정보 (있는 경우) */}
-                {selectedInvoice.type === "plusone" && selectedInvoice.referrerEmail && (
+                {selectedInvoice.type === "customer" && selectedInvoice.referrerEmail && (
                   <div className="border rounded-md p-4">
                     <h3 className="text-base font-medium mb-2">Plus One 정보</h3>
                     <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground">소개자 이름</h4>
+                        <p>{selectedInvoice.referrerName}</p>
+                      </div>
                       <div>
                         <h4 className="text-sm font-medium text-muted-foreground">소개자 이메일</h4>
                         <p>{selectedInvoice.referrerEmail}</p>

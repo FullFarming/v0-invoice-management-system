@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import DashboardLayout from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,8 +13,8 @@ import { useAuth } from "@/components/auth-provider"
 import { ApprovalActions } from "@/components/approval-actions"
 import { ApprovalStatus, type ApprovalStep } from "@/components/approval-status"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, Clock, Eye, DollarSign } from "lucide-react"
-import { formatCurrency, getSecondaryCurrencyDisplay } from "@/lib/currency"
+import { Clock, Eye, FileText } from "lucide-react"
+import { formatCurrency } from "@/lib/currency"
 
 // 인보이스 타입 정의
 interface Invoice {
@@ -48,17 +48,6 @@ interface Invoice {
   referralAmount?: number
 }
 
-// Fee Sharing 할당 정보 인터페이스
-interface FeeAllocation {
-  invoiceNumber: string
-  projectName: string
-  amount: number
-  percentage: number
-  currency?: string
-  status: "pending" | "approved" | "rejected"
-  invoice: Invoice
-}
-
 export default function InboxPage() {
   const router = useRouter()
   const { toast } = useToast()
@@ -69,12 +58,6 @@ export default function InboxPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("pending")
-
-  // 내 할당 Fee 목록
-  const [myAllocations, setMyAllocations] = useState<FeeAllocation[]>([])
-
-  // 내 승인 대기 목록
-  const [awaitingApprovals, setAwaitingApprovals] = useState<Invoice[]>([])
 
   // 승인 대기 중인 인보이스 로드
   useEffect(() => {
@@ -102,36 +85,8 @@ export default function InboxPage() {
         return userIsApprover && (invoice.status !== "pending" || invoice.currentApprovalStep > userApprovalLevel)
       })
 
-      // 현재 사용자에게 할당된 Fee Sharing 찾기
-      const allocations: FeeAllocation[] = []
-      allInvoices.forEach((invoice) => {
-        if (invoice.feeShares) {
-          const myShare = invoice.feeShares.find((share) => share.email === user.email)
-          if (myShare) {
-            allocations.push({
-              invoiceNumber: invoice.invoiceNumber,
-              projectName: invoice.projectName,
-              amount: myShare.amount,
-              percentage: myShare.percentage,
-              currency: invoice.currency,
-              status: invoice.status,
-              invoice: invoice,
-            })
-          }
-        }
-      })
-
-      // 승인 대기 중인 인보이스 중 현재 사용자가 승인해야 하는 인보이스 필터링
-      const awaiting = allInvoices.filter((invoice) => {
-        if (invoice.status !== "pending") return false
-        const currentApprover = invoice.approvers.find((approver) => approver.level === invoice.currentApprovalStep)
-        return currentApprover && currentApprover.email === user.email
-      })
-
       setPendingApprovals(pending)
       setCompletedApprovals(completed)
-      setMyAllocations(allocations)
-      setAwaitingApprovals(awaiting)
     }
 
     loadInvoices()
@@ -259,30 +214,15 @@ export default function InboxPage() {
     setDetailsOpen(true)
   }
 
-  // My Allocation Fee 총액 계산
-  const calculateMyAllocationTotal = useMemo(() => {
-    return myAllocations.reduce((sum, allocation) => {
-      // 통화가 KRW가 아닌 경우 환산 (간단한 예시)
-      if (allocation.currency && allocation.currency !== "KRW") {
-        if (allocation.currency === "USD") {
-          return sum + allocation.amount * 1478.25 // USD to KRW
-        }
-        // 다른 통화에 대한 환산 로직 추가 가능
-        return sum + allocation.amount
-      }
-      return sum + allocation.amount
-    }, 0)
-  }, [myAllocations])
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Inbox</h1>
-          <p className="text-muted-foreground">승인 요청, 할당 Fee 및 처리 현황을 확인할 수 있습니다.</p>
+          <p className="text-muted-foreground">승인 요청 및 처리 현황을 확인할 수 있습니다.</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">승인 대기</CardTitle>
@@ -291,16 +231,6 @@ export default function InboxPage() {
             <CardContent>
               <div className="text-2xl font-bold">{pendingApprovals.length}</div>
               <p className="text-xs text-muted-foreground">내 승인을 기다리는 인보이스</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">My Allocation Fee</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">₩{Math.round(calculateMyAllocationTotal).toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">총 {myAllocations.length}개 인보이스</p>
             </CardContent>
           </Card>
           <Card>
@@ -318,8 +248,6 @@ export default function InboxPage() {
         <Tabs defaultValue={activeTab} className="w-full" onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="pending">승인 대기 ({pendingApprovals.length})</TabsTrigger>
-            <TabsTrigger value="myAllocation">My Allocation Fee ({myAllocations.length})</TabsTrigger>
-            <TabsTrigger value="awaitingApproval">Awaiting Approval ({awaitingApprovals.length})</TabsTrigger>
             <TabsTrigger value="completed">처리 완료 ({completedApprovals.length})</TabsTrigger>
           </TabsList>
 
@@ -351,7 +279,7 @@ export default function InboxPage() {
                             {invoice.type === "customer"
                               ? "Customer Invoice"
                               : invoice.type === "supplier"
-                                ? "3rd party Invoice"
+                                ? "Supplier Invoice"
                                 : "Plus One"}
                           </TableCell>
                           <TableCell>{invoice.projectName}</TableCell>
@@ -363,112 +291,6 @@ export default function InboxPage() {
                               <Eye className="mr-2 h-4 w-4" />
                               상세보기
                             </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="text-center p-6">
-                    <Clock className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-                    <p className="mt-2 text-lg font-medium">승인 대기 중인 인보이스가 없습니다.</p>
-                    <p className="text-sm text-muted-foreground">새로운 승인 요청이 들어오면 이곳에 표시됩니다.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="myAllocation">
-            <Card>
-              <CardHeader>
-                <CardTitle>My Allocation Fee</CardTitle>
-                <CardDescription>나에게 할당된 Fee Sharing 목록입니다.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {myAllocations.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>인보이스 번호</TableHead>
-                        <TableHead>프로젝트</TableHead>
-                        <TableHead>할당 금액</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {myAllocations.map((allocation) => (
-                        <TableRow key={allocation.invoiceNumber}>
-                          <TableCell className="font-medium">{allocation.invoiceNumber}</TableCell>
-                          <TableCell>{allocation.projectName}</TableCell>
-                          <TableCell>
-                            <div>
-                              {formatCurrency(allocation.amount, allocation.currency || "KRW")}
-                              {(allocation.currency === "KRW" || allocation.currency === "USD") && (
-                                <div className="text-xs text-muted-foreground">
-                                  {getSecondaryCurrencyDisplay(allocation.amount, allocation.currency || "KRW")}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="text-center p-6">
-                    <DollarSign className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-                    <p className="mt-2 text-lg font-medium">할당된 Fee가 없습니다.</p>
-                    <p className="text-sm text-muted-foreground">Fee Sharing이 할당되면 이곳에 표시됩니다.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="awaitingApproval">
-            <Card>
-              <CardHeader>
-                <CardTitle>Awaiting Approval</CardTitle>
-                <CardDescription>내 승인을 기다리는 인보이스 목록입니다.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {awaitingApprovals.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>인보이스 번호</TableHead>
-                        <TableHead>유형</TableHead>
-                        <TableHead>프로젝트</TableHead>
-                        <TableHead>금액</TableHead>
-                        <TableHead>신청자</TableHead>
-                        <TableHead>신청일</TableHead>
-                        <TableHead>작업</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {awaitingApprovals.map((invoice) => (
-                        <TableRow key={invoice.invoiceNumber}>
-                          <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                          <TableCell>
-                            {invoice.type === "customer"
-                              ? "Customer Invoice"
-                              : invoice.type === "supplier"
-                                ? "3rd party Invoice"
-                                : "Plus One"}
-                          </TableCell>
-                          <TableCell>{invoice.projectName}</TableCell>
-                          <TableCell>{formatCurrency(invoice.totalAmount, invoice.currency || "KRW")}</TableCell>
-                          <TableCell>{invoice.createdBy}</TableCell>
-                          <TableCell>{new Date(invoice.createdAt).toLocaleDateString()}</TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              <Button variant="outline" size="icon" onClick={() => showInvoiceDetails(invoice)}>
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => showInvoiceDetails(invoice)}>
-                                승인하기
-                              </Button>
-                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -525,7 +347,7 @@ export default function InboxPage() {
                               {invoice.type === "customer"
                                 ? "Customer Invoice"
                                 : invoice.type === "supplier"
-                                  ? "3rd party Invoice"
+                                  ? "Supplier Invoice"
                                   : "Plus One"}
                             </TableCell>
                             <TableCell>{invoice.projectName}</TableCell>
@@ -593,7 +415,7 @@ export default function InboxPage() {
                       {selectedInvoice.type === "customer"
                         ? "Customer Invoice"
                         : selectedInvoice.type === "supplier"
-                          ? "3rd party Invoice"
+                          ? "Supplier Invoice"
                           : "Plus One"}
                     </p>
                   </div>
@@ -623,11 +445,6 @@ export default function InboxPage() {
                       <p className="text-base">
                         {formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency || "KRW")}
                       </p>
-                      {(selectedInvoice.currency === "KRW" || selectedInvoice.currency === "USD") && (
-                        <p className="text-xs text-muted-foreground">
-                          {getSecondaryCurrencyDisplay(selectedInvoice.totalAmount, selectedInvoice.currency || "KRW")}
-                        </p>
-                      )}
                     </div>
                   </div>
                   <div>
